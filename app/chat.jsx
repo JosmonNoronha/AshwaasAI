@@ -7,50 +7,151 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system";
 import { theme } from "../constants/theme";
-
-const conversation = [
-  {
-    role: "assistant",
-    time: "10:00 AM",
-    text: "Welcome to MindfulAI. Start a conversation or continue where you left off.",
-  },
-  { role: "user", time: "10:01 AM", text: "I want a calm place to reflect." },
-  {
-    role: "assistant",
-    time: "10:02 AM",
-    text: "I hear you. Small steps are fine.",
-  },
-];
+import { BACKEND_URL } from "../constants/api";
 
 export default function Chat() {
   const router = useRouter();
-  const [convoId, setConvoId] = useState("new");
+  const scrollRef = useRef(null);
+
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      text: "नमस्कार! हांव AshwaasAI. तुमी कसले उलोवपाक शकतात?",
+      time: _now(),
+    },
+  ]);
+  const [inputText, setInputText] = useState("");
+  const [isLoading, setIsLoading]   = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const recordingRef = useRef(null);
 
   useEffect(() => {
-    // safe parse of `id` query param (works on web); fall back to 'new'
-    try {
-      if (
-        typeof window !== "undefined" &&
-        window.location &&
-        window.location.search
-      ) {
-        const sp = new URLSearchParams(window.location.search);
-        const id = sp.get("id");
-        if (id) setConvoId(id);
-      }
-    } catch (e) {
-      // ignore
-    }
-  }, []);
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, [messages]);
 
+  // ── helpers ───────────────────────────────────────────────────────────────
+  function _now() {
+    return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function _addMessage(role, text) {
+    setMessages((prev) => [...prev, { role, text, time: _now() }]);
+  }
+
+  async function _callBackend(body) {
+    const res = await fetch(`${BACKEND_URL}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // ── send text ──────────────────────────────────────────────────────────────
+  async function handleSend() {
+    const text = inputText.trim();
+    if (!text || isLoading) return;
+    setInputText("");
+    _addMessage("user", text);
+    setIsLoading(true);
+    try {
+      const data = await _callBackend({ text });
+      _addMessage("assistant", data.assistant_konkani);
+    } catch (e) {
+      _addMessage("assistant", `⚠ ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // ── mic: tap to start, tap again to stop + send ───────────────────────────
+  async function handleMic() {
+    if (isRecording) {
+      // Stop recording and send
+      try {
+        await recordingRef.current.stopAndUnloadAsync();
+        const uri = recordingRef.current.getURI();
+        recordingRef.current = null;
+        setIsRecording(false);
+
+        _addMessage("user", "🎤 Voice message");
+        setIsLoading(true);
+
+        const audio_b64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const data = await _callBackend({ audio_b64 });
+        // Replace the placeholder with actual transcription
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy.findLastIndex((m) => m.text === "🎤 Voice message");
+          if (last !== -1) copy[last] = { ...copy[last], text: data.user_konkani || "🎤 Voice message" };
+          return copy;
+        });
+        _addMessage("assistant", data.assistant_konkani);
+      } catch (e) {
+        _addMessage("assistant", `⚠ ${e.message}`);
+        setIsRecording(false);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Start recording
+      try {
+        const { status } = await Audio.requestPermissionsAsync();
+        if (status !== "granted") {
+          _addMessage("assistant", "⚠ Microphone permission denied.");
+          return;
+        }
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        const rec = new Audio.Recording();
+        await rec.prepareToRecordAsync({
+          android: {
+            extension: ".wav",
+            outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
+            audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
+            sampleRate: 16000,
+            numberOfChannels: 1,
+            bitRate: 256000,
+          },
+          ios: {
+            extension: ".wav",
+            outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
+            audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
+            sampleRate: 16000,
+            numberOfChannels: 1,
+            bitRate: 256000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+        });
+        await rec.startAsync();
+        recordingRef.current = rec;
+        setIsRecording(true);
+      } catch (e) {
+        _addMessage("assistant", `⚠ Could not start recording: ${e.message}`);
+      }
+    }
+  }
+
+  // ── render ─────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.container}>
+        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
@@ -60,22 +161,22 @@ export default function Chat() {
             <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
           <View style={styles.headerCopy}>
-            <Text style={styles.title}>
-              {convoId === "new" ? "New conversation" : "Conversation"}
-            </Text>
+            <Text style={styles.title}>AshwaasAI</Text>
           </View>
         </View>
 
+        {/* Message thread */}
         <ScrollView
+          ref={scrollRef}
           style={styles.thread}
           contentContainerStyle={styles.threadContent}
           showsVerticalScrollIndicator={false}
         >
-          {conversation.map((item, i) => {
+          {messages.map((item, i) => {
             const isUser = item.role === "user";
             return (
               <View
-                key={`${item.role}-${i}`}
+                key={i}
                 style={[
                   styles.messageRow,
                   isUser ? styles.messageRowUser : styles.messageRowAssistant,
@@ -86,45 +187,58 @@ export default function Chat() {
                     <Text style={styles.avatarText}>AI</Text>
                   </View>
                 )}
-                <View
-                  style={[
-                    styles.bubble,
-                    isUser ? styles.userBubble : styles.assistantBubble,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.bubbleText,
-                      isUser
-                        ? styles.userBubbleText
-                        : styles.assistantBubbleText,
-                    ]}
-                  >
+                <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
+                  <Text style={[styles.bubbleText, isUser ? styles.userBubbleText : styles.assistantBubbleText]}>
                     {item.text}
                   </Text>
-                  <Text style={[styles.time, isUser && styles.timeUser]}>
-                    {item.time}
-                  </Text>
+                  <Text style={[styles.time, isUser && styles.timeUser]}>{item.time}</Text>
                 </View>
               </View>
             );
           })}
+
+          {/* Typing indicator */}
+          {isLoading && (
+            <View style={[styles.messageRow, styles.messageRowAssistant]}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>AI</Text>
+              </View>
+              <View style={[styles.bubble, styles.assistantBubble]}>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              </View>
+            </View>
+          )}
         </ScrollView>
 
+        {/* Composer */}
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 68}
         >
           <View style={styles.composerWrap}>
-            <TouchableOpacity style={styles.micPill} activeOpacity={0.8}>
-              <Text style={styles.micText}>🎤</Text>
+            <TouchableOpacity
+              style={[styles.micPill, isRecording && styles.micPillActive]}
+              activeOpacity={0.8}
+              onPress={handleMic}
+              disabled={isLoading}
+            >
+              <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
             </TouchableOpacity>
             <TextInput
               style={styles.composerField}
-              placeholder="Type a message"
+              placeholder="Type in Konkani or use mic"
               placeholderTextColor={theme.colors.textMuted}
+              value={inputText}
+              onChangeText={setInputText}
+              onSubmitEditing={handleSend}
+              editable={!isLoading && !isRecording}
             />
-            <TouchableOpacity style={styles.sendPill} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={[styles.sendPill, (!inputText.trim() || isLoading) && styles.sendPillDisabled]}
+              activeOpacity={0.85}
+              onPress={handleSend}
+              disabled={!inputText.trim() || isLoading}
+            >
               <Text style={styles.sendText}>→</Text>
             </TouchableOpacity>
           </View>
@@ -177,6 +291,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   messageRowUser: { flexDirection: "row-reverse" },
+  messageRowAssistant: {},
   avatar: {
     width: 34,
     height: 34,
@@ -210,17 +325,9 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   bubbleText: { fontSize: 15, lineHeight: 22 },
-  assistantBubbleText: {
-    color: theme.colors.text,
-    fontFamily: theme.fonts.body,
-  },
+  assistantBubbleText: { color: theme.colors.text, fontFamily: theme.fonts.body },
   userBubbleText: { color: "#fff", fontFamily: theme.fonts.body },
-  time: {
-    marginTop: 6,
-    fontSize: 10,
-    color: theme.colors.textMuted,
-    fontFamily: theme.fonts.body,
-  },
+  time: { marginTop: 6, fontSize: 10, color: theme.colors.textMuted, fontFamily: theme.fonts.body },
   timeUser: { color: "rgba(255,255,255,0.72)" },
 
   composerWrap: {
@@ -242,11 +349,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  micText: {
-    color: theme.colors.textSecondary,
-    fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 16,
+  micPillActive: {
+    backgroundColor: theme.colors.primaryGlow,
+    borderColor: theme.colors.primary,
   },
+  micText: { fontSize: 16 },
   composerField: {
     flex: 1,
     minHeight: 44,
@@ -257,6 +364,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     color: theme.colors.text,
+    fontFamily: theme.fonts.body,
   },
   sendPill: {
     width: 48,
@@ -266,9 +374,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: theme.colors.primary,
   },
-  sendText: {
-    color: "#fff",
-    fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 18,
-  },
+  sendPillDisabled: { backgroundColor: theme.colors.surfaceElevated },
+  sendText: { color: "#fff", fontFamily: theme.fonts.bodySemiBold, fontSize: 18 },
 });
