@@ -12,14 +12,20 @@ import {
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "../constants/theme";
 import { BACKEND_URL } from "../constants/api";
 
 export default function Chat() {
   const router = useRouter();
   const scrollRef = useRef(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const [messages, setMessages] = useState([
     {
@@ -29,9 +35,8 @@ export default function Chat() {
     },
   ]);
   const [inputText, setInputText] = useState("");
-  const [isLoading, setIsLoading]   = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const recordingRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -39,7 +44,10 @@ export default function Chat() {
 
   // ── helpers ───────────────────────────────────────────────────────────────
   function _now() {
-    return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   function _addMessage(role, text) {
@@ -81,10 +89,13 @@ export default function Chat() {
     if (isRecording) {
       // Stop recording and send
       try {
-        await recordingRef.current.stopAndUnloadAsync();
-        const uri = recordingRef.current.getURI();
-        recordingRef.current = null;
+        await audioRecorder.stop();
+        const uri = audioRecorder.uri;
         setIsRecording(false);
+
+        if (!uri) {
+          throw new Error("Recording file was not created.");
+        }
 
         _addMessage("user", "🎤 Voice message");
         setIsLoading(true);
@@ -97,7 +108,11 @@ export default function Chat() {
         setMessages((prev) => {
           const copy = [...prev];
           const last = copy.findLastIndex((m) => m.text === "🎤 Voice message");
-          if (last !== -1) copy[last] = { ...copy[last], text: data.user_konkani || "🎤 Voice message" };
+          if (last !== -1)
+            copy[last] = {
+              ...copy[last],
+              text: data.user_konkani || "🎤 Voice message",
+            };
           return copy;
         });
         _addMessage("assistant", data.assistant_konkani);
@@ -110,36 +125,18 @@ export default function Chat() {
     } else {
       // Start recording
       try {
-        const { status } = await Audio.requestPermissionsAsync();
-        if (status !== "granted") {
+        const { granted } = await requestRecordingPermissionsAsync();
+        if (!granted) {
           _addMessage("assistant", "⚠ Microphone permission denied.");
           return;
         }
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-        const rec = new Audio.Recording();
-        await rec.prepareToRecordAsync({
-          android: {
-            extension: ".wav",
-            outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
-            audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
-            sampleRate: 16000,
-            numberOfChannels: 1,
-            bitRate: 256000,
-          },
-          ios: {
-            extension: ".wav",
-            outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
-            audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
-            sampleRate: 16000,
-            numberOfChannels: 1,
-            bitRate: 256000,
-            linearPCMBitDepth: 16,
-            linearPCMIsBigEndian: false,
-            linearPCMIsFloat: false,
-          },
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+          interruptionMode: "doNotMix",
         });
-        await rec.startAsync();
-        recordingRef.current = rec;
+        await audioRecorder.prepareToRecordAsync();
+        audioRecorder.record();
         setIsRecording(true);
       } catch (e) {
         _addMessage("assistant", `⚠ Could not start recording: ${e.message}`);
@@ -187,11 +184,25 @@ export default function Chat() {
                     <Text style={styles.avatarText}>AI</Text>
                   </View>
                 )}
-                <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-                  <Text style={[styles.bubbleText, isUser ? styles.userBubbleText : styles.assistantBubbleText]}>
+                <View
+                  style={[
+                    styles.bubble,
+                    isUser ? styles.userBubble : styles.assistantBubble,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.bubbleText,
+                      isUser
+                        ? styles.userBubbleText
+                        : styles.assistantBubbleText,
+                    ]}
+                  >
                     {item.text}
                   </Text>
-                  <Text style={[styles.time, isUser && styles.timeUser]}>{item.time}</Text>
+                  <Text style={[styles.time, isUser && styles.timeUser]}>
+                    {item.time}
+                  </Text>
                 </View>
               </View>
             );
@@ -234,7 +245,10 @@ export default function Chat() {
               editable={!isLoading && !isRecording}
             />
             <TouchableOpacity
-              style={[styles.sendPill, (!inputText.trim() || isLoading) && styles.sendPillDisabled]}
+              style={[
+                styles.sendPill,
+                (!inputText.trim() || isLoading) && styles.sendPillDisabled,
+              ]}
               activeOpacity={0.85}
               onPress={handleSend}
               disabled={!inputText.trim() || isLoading}
@@ -325,9 +339,17 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   bubbleText: { fontSize: 15, lineHeight: 22 },
-  assistantBubbleText: { color: theme.colors.text, fontFamily: theme.fonts.body },
+  assistantBubbleText: {
+    color: theme.colors.text,
+    fontFamily: theme.fonts.body,
+  },
   userBubbleText: { color: "#fff", fontFamily: theme.fonts.body },
-  time: { marginTop: 6, fontSize: 10, color: theme.colors.textMuted, fontFamily: theme.fonts.body },
+  time: {
+    marginTop: 6,
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    fontFamily: theme.fonts.body,
+  },
   timeUser: { color: "rgba(255,255,255,0.72)" },
 
   composerWrap: {
@@ -375,5 +397,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   sendPillDisabled: { backgroundColor: theme.colors.surfaceElevated },
-  sendText: { color: "#fff", fontFamily: theme.fonts.bodySemiBold, fontSize: 18 },
+  sendText: {
+    color: "#fff",
+    fontFamily: theme.fonts.bodySemiBold,
+    fontSize: 18,
+  },
 });
