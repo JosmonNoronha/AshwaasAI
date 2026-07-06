@@ -148,31 +148,29 @@ export default function Chat() {
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoiding}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
-      >
-        <View style={styles.container}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.backText}>←</Text>
-            </TouchableOpacity>
-            <View style={styles.headerCopy}>
-              <Text style={styles.title}>AshwaasAI</Text>
-            </View>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backButton}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.backText}>←</Text>
+          </TouchableOpacity>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>AshwaasAI</Text>
           </View>
+        </View>
 
-          {/* Message thread */}
+        <View style={styles.chatBody}>
           <ScrollView
             ref={scrollRef}
             style={styles.thread}
             contentContainerStyle={styles.threadContent}
+            keyboardDismissMode={
+              Platform.OS === "ios" ? "interactive" : "on-drag"
+            }
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -231,7 +229,6 @@ export default function Chat() {
             )}
           </ScrollView>
 
-          {/* Composer */}
           {showKeyboardTip && (
             <View style={styles.keyboardTip}>
               <View style={styles.keyboardTipHeader}>
@@ -252,49 +249,57 @@ export default function Chat() {
               </Text>
             </View>
           )}
-          <View style={styles.composerWrap}>
-            <TouchableOpacity
-              style={[styles.micPill, isRecording && styles.micPillActive]}
-              activeOpacity={0.8}
-              onPress={handleMic}
-              disabled={isLoading}
-            >
-              <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={styles.composerField}
-              placeholder="कितेंय सांग.."
-              placeholderTextColor={theme.colors.textMuted}
-              value={inputText}
-              onChangeText={setInputText}
-              onSubmitEditing={handleSend}
-              editable={!isLoading && !isRecording}
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendPill,
-                (!inputText.trim() || isLoading) && styles.sendPillDisabled,
-              ]}
-              activeOpacity={0.85}
-              onPress={handleSend}
-              disabled={!inputText.trim() || isLoading}
-            >
-              <Text style={styles.sendText}>→</Text>
-            </TouchableOpacity>
-          </View>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            keyboardVerticalOffset={0}
+          >
+            <View style={styles.composerWrap}>
+              <TouchableOpacity
+                style={[styles.micPill, isRecording && styles.micPillActive]}
+                activeOpacity={0.8}
+                onPress={handleMic}
+                disabled={isLoading}
+              >
+                <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={styles.composerField}
+                placeholder="कितेंय सांग.."
+                placeholderTextColor={theme.colors.textMuted}
+                value={inputText}
+                onChangeText={setInputText}
+                onSubmitEditing={handleSend}
+                editable={!isLoading && !isRecording}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.sendPill,
+                  (!inputText.trim() || isLoading) && styles.sendPillDisabled,
+                ]}
+                activeOpacity={0.85}
+                onPress={handleSend}
+                disabled={!inputText.trim() || isLoading}
+              >
+                <Text style={styles.sendText}>→</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
-  keyboardAvoiding: { flex: 1 },
   container: {
     flex: 1,
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
+  },
+  chatBody: {
+    flex: 1,
   },
   header: {
     flexDirection: "row",
@@ -323,8 +328,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
 
-  thread: { flex: 1, marginBottom: 8 },
-  threadContent: { paddingBottom: 16 },
+  thread: { flex: 1 },
+  threadContent: { paddingBottom: 12 },
   messageRow: {
     flexDirection: "row",
     gap: 10,
