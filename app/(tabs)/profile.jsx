@@ -1,6 +1,15 @@
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+} from "react-native";
+import { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
+import { BACKEND_URL, setBackendUrl } from "../../constants/api";
 
 const settings = [
   {
@@ -19,6 +28,15 @@ const settings = [
 ];
 
 export default function Profile() {
+  const [backendInput, setBackendInput] = useState(BACKEND_URL);
+  const [savedUrl, setSavedUrl] = useState(BACKEND_URL);
+
+  function handleSaveBackendUrl() {
+    const nextUrl = setBackendUrl(backendInput);
+    setBackendInput(nextUrl);
+    setSavedUrl(nextUrl);
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -58,6 +76,39 @@ export default function Profile() {
               {index < settings.length - 1 && <View style={styles.divider} />}
             </View>
           ))}
+        </View>
+
+        <Text style={styles.sectionTitle}>Development backend</Text>
+        <View style={styles.backendCard}>
+          <Text style={styles.backendLabel}>Backend URL</Text>
+          <Text style={styles.backendHint}>
+            Temporary setting for development only. This changes where chat
+            requests are sent.
+          </Text>
+          <TextInput
+            value={backendInput}
+            onChangeText={setBackendInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            placeholder="https://your-ngrok-url.ngrok-free.dev"
+            placeholderTextColor={theme.colors.textMuted}
+            style={styles.backendInput}
+            returnKeyType="done"
+            onSubmitEditing={handleSaveBackendUrl}
+          />
+          <View style={styles.backendActions}>
+            <TouchableOpacity
+              onPress={handleSaveBackendUrl}
+              activeOpacity={0.85}
+              style={styles.saveButton}
+            >
+              <Text style={styles.saveButtonText}>Save URL</Text>
+            </TouchableOpacity>
+            <Text style={styles.savedText} numberOfLines={1}>
+              Active: {savedUrl}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.supportCard}>
@@ -185,6 +236,59 @@ const styles = StyleSheet.create({
   },
   menuArrow: { color: theme.colors.textMuted, fontSize: 20 },
   divider: { height: 1, backgroundColor: theme.colors.border, marginLeft: 42 },
+  backendCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: theme.spacing.lg,
+  },
+  backendLabel: {
+    fontFamily: theme.fonts.bodySemiBold,
+    color: theme.colors.text,
+    fontSize: 15,
+    marginBottom: 4,
+  },
+  backendHint: {
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  backendInput: {
+    backgroundColor: theme.colors.surfaceElevated,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    color: theme.colors.text,
+    fontFamily: theme.fonts.body,
+    fontSize: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  backendActions: {
+    marginTop: 12,
+    gap: 10,
+  },
+  saveButton: {
+    alignSelf: "flex-start",
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  saveButtonText: {
+    color: "#fff",
+    fontFamily: theme.fonts.bodySemiBold,
+    fontSize: 14,
+  },
+  savedText: {
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
   supportCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.lg,

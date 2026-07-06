@@ -45,7 +45,7 @@ export default function Home() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.name}>आशवास AI</Text>
+            <Text style={styles.name}>आशवास</Text>
           </View>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>MH</Text>
