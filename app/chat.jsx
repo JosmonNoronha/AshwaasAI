@@ -22,6 +22,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "../constants/theme";
 import { BACKEND_URL } from "../constants/api";
 
+const ScreenWrapper = Platform.OS === "ios" ? KeyboardAvoidingView : View;
+
 export default function Chat() {
   const router = useRouter();
   const scrollRef = useRef(null);
@@ -148,6 +150,10 @@ export default function Chat() {
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      <ScreenWrapper
+      style={styles.container}
+      {...(Platform.OS === "ios" && { behavior: "padding", keyboardVerticalOffset: 0 })}
+    >
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -250,10 +256,7 @@ export default function Chat() {
             </View>
           )}
 
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            keyboardVerticalOffset={0}
-          >
+          
             <View style={styles.composerWrap}>
               <TouchableOpacity
                 style={[styles.micPill, isRecording && styles.micPillActive]}
@@ -284,9 +287,10 @@ export default function Chat() {
                 <Text style={styles.sendText}>→</Text>
               </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
+          
         </View>
       </View>
+      </ScreenWrapper>
     </SafeAreaView>
   );
 }
