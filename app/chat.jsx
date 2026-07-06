@@ -8,10 +8,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -22,15 +23,27 @@ import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "../constants/theme";
 import { BACKEND_URL } from "../constants/api";
 
-const ScreenWrapper = KeyboardAvoidingView;
+// NOTE: Android has `softwareKeyboardLayoutMode: "resize"` configured in app.json,
+// so the OS already resizes the window when the keyboard opens there.
+// KeyboardAvoidingView should therefore do nothing extra on Android (behavior=undefined) —
+// applying "height" on top of that native resize is what caused the jumpy/double-shift bug.
+const KAV_BEHAVIOR = Platform.OS === "ios" ? "padding" : undefined;
+
+let messageIdCounter = 0;
+function nextMessageId() {
+  messageIdCounter += 1;
+  return `m-${Date.now()}-${messageIdCounter}`;
+}
 
 export default function Chat() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const [messages, setMessages] = useState([
     {
+      id: nextMessageId(),
       role: "assistant",
       text: "नमस्कार! हांव AshwaasAI. तुमी कसले उलोवपाक शकतात?",
       time: _now(),
@@ -40,10 +53,34 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showKeyboardTip, setShowKeyboardTip] = useState(true);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
+  // Scroll to bottom whenever messages change.
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
+
+  // Scroll to bottom whenever the keyboard opens (fixes last message hiding behind composer).
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      // slight delay lets the layout settle before we scroll
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      });
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // ── helpers ───────────────────────────────────────────────────────────────
   function _now() {
@@ -54,7 +91,15 @@ export default function Chat() {
   }
 
   function _addMessage(role, text) {
-    setMessages((prev) => [...prev, { role, text, time: _now() }]);
+    const id = nextMessageId();
+    setMessages((prev) => [...prev, { id, role, text, time: _now() }]);
+    return id;
+  }
+
+  function _updateMessage(id, text) {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, text } : m))
+    );
   }
 
   async function _callBackend(body) {
@@ -91,6 +136,7 @@ export default function Chat() {
   async function handleMic() {
     if (isRecording) {
       // Stop recording and send
+      let placeholderId = null;
       try {
         await audioRecorder.stop();
         const uri = audioRecorder.uri;
@@ -100,26 +146,20 @@ export default function Chat() {
           throw new Error("Recording file was not created.");
         }
 
-        _addMessage("user", "🎤 Voice message");
+        placeholderId = _addMessage("user", "🎤 Voice message");
         setIsLoading(true);
 
         const audio_b64 = await FileSystem.readAsStringAsync(uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
         const data = await _callBackend({ audio_b64 });
-        // Replace the placeholder with actual transcription
-        setMessages((prev) => {
-          const copy = [...prev];
-          const last = copy.findLastIndex((m) => m.text === "🎤 Voice message");
-          if (last !== -1)
-            copy[last] = {
-              ...copy[last],
-              text: data.user_konkani || "🎤 Voice message",
-            };
-          return copy;
-        });
+        // Replace the placeholder with the actual transcription (tracked by id, not text match)
+        _updateMessage(placeholderId, data.user_konkani || "🎤 Voice message");
         _addMessage("assistant", data.assistant_konkani);
       } catch (e) {
+        if (placeholderId) {
+          _updateMessage(placeholderId, "⚠ Could not transcribe voice message");
+        }
         _addMessage("assistant", `⚠ ${e.message}`);
         setIsRecording(false);
       } finally {
@@ -149,167 +189,179 @@ export default function Chat() {
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <ScreenWrapper
-        style={styles.screen}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      {/* Header sits OUTSIDE the KeyboardAvoidingView so it never shifts when the keyboard opens */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Text style={styles.backText}>←</Text>
+        </TouchableOpacity>
+        <View style={styles.headerCopy}>
+          <Text style={styles.title}>AshwaasAI</Text>
+        </View>
+      </View>
+
+      <KeyboardAvoidingView
+        style={styles.chatBody}
+        behavior={KAV_BEHAVIOR}
         keyboardVerticalOffset={0}
       >
-        <View style={styles.container}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.backText}>←</Text>
-            </TouchableOpacity>
-            <View style={styles.headerCopy}>
-              <Text style={styles.title}>AshwaasAI</Text>
-            </View>
-          </View>
-
-          <View style={styles.chatBody}>
-            <ScrollView
-              ref={scrollRef}
-              style={styles.thread}
-              contentContainerStyle={styles.threadContent}
-              keyboardDismissMode={
-                Platform.OS === "ios" ? "interactive" : "on-drag"
-              }
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {messages.map((item, i) => {
-                const isUser = item.role === "user";
-                return (
-                  <View
-                    key={i}
-                    style={[
-                      styles.messageRow,
-                      isUser
-                        ? styles.messageRowUser
-                        : styles.messageRowAssistant,
-                    ]}
-                  >
-                    {!isUser && (
-                      <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>AI</Text>
-                      </View>
-                    )}
-                    <View
-                      style={[
-                        styles.bubble,
-                        isUser ? styles.userBubble : styles.assistantBubble,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.bubbleText,
-                          isUser
-                            ? styles.userBubbleText
-                            : styles.assistantBubbleText,
-                        ]}
-                      >
-                        {item.text}
-                      </Text>
-                      <Text style={[styles.time, isUser && styles.timeUser]}>
-                        {item.time}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-
-              {/* Typing indicator */}
-              {isLoading && (
-                <View style={[styles.messageRow, styles.messageRowAssistant]}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.thread}
+          contentContainerStyle={styles.threadContent}
+          keyboardDismissMode={
+            Platform.OS === "ios" ? "interactive" : "on-drag"
+          }
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() =>
+            scrollRef.current?.scrollToEnd({ animated: true })
+          }
+        >
+          {messages.map((item) => {
+            const isUser = item.role === "user";
+            return (
+              <View
+                key={item.id}
+                style={[
+                  styles.messageRow,
+                  isUser
+                    ? styles.messageRowUser
+                    : styles.messageRowAssistant,
+                ]}
+              >
+                {!isUser && (
                   <View style={styles.avatar}>
                     <Text style={styles.avatarText}>AI</Text>
                   </View>
-                  <View style={[styles.bubble, styles.assistantBubble]}>
-                    <ActivityIndicator
-                      size="small"
-                      color={theme.colors.primary}
-                    />
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-
-            {showKeyboardTip && (
-              <View style={styles.keyboardTip}>
-                <View style={styles.keyboardTipHeader}>
-                  <Text style={styles.keyboardTipLabel}>Input tip</Text>
-                  <TouchableOpacity
-                    onPress={() => setShowKeyboardTip(false)}
-                    activeOpacity={0.8}
-                    style={styles.keyboardTipClose}
-                    accessibilityRole="button"
-                    accessibilityLabel="Dismiss keyboard tip"
+                )}
+                <View
+                  style={[
+                    styles.bubble,
+                    isUser ? styles.userBubble : styles.assistantBubble,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.bubbleText,
+                      isUser
+                        ? styles.userBubbleText
+                        : styles.assistantBubbleText,
+                    ]}
                   >
-                    <Text style={styles.keyboardTipCloseText}>×</Text>
-                  </TouchableOpacity>
+                    {item.text}
+                  </Text>
+                  <Text style={[styles.time, isUser && styles.timeUser]}>
+                    {item.time}
+                  </Text>
                 </View>
-                <Text style={styles.keyboardTipText}>
-                  Use a Devanagari-capable keyboard like Gboard and switch to it
-                  from your phone's keyboard selector.
-                </Text>
               </View>
-            )}
+            );
+          })}
 
-            <View style={styles.composerWrap}>
+          {/* Typing indicator */}
+          {isLoading && (
+            <View style={[styles.messageRow, styles.messageRowAssistant]}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>AI</Text>
+              </View>
+              <View style={[styles.bubble, styles.assistantBubble]}>
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.primary}
+                />
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {showKeyboardTip && !isKeyboardVisible && (
+          <View style={styles.keyboardTip}>
+            <View style={styles.keyboardTipHeader}>
+              <Text style={styles.keyboardTipLabel}>Input tip</Text>
               <TouchableOpacity
-                style={[styles.micPill, isRecording && styles.micPillActive]}
+                onPress={() => setShowKeyboardTip(false)}
                 activeOpacity={0.8}
-                onPress={handleMic}
-                disabled={isLoading}
+                style={styles.keyboardTipClose}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss keyboard tip"
               >
-                <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={styles.composerField}
-                placeholder="कितेंय सांग.."
-                placeholderTextColor={theme.colors.textMuted}
-                value={inputText}
-                onChangeText={setInputText}
-                onSubmitEditing={handleSend}
-                editable={!isLoading && !isRecording}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.sendPill,
-                  (!inputText.trim() || isLoading) && styles.sendPillDisabled,
-                ]}
-                activeOpacity={0.85}
-                onPress={handleSend}
-                disabled={!inputText.trim() || isLoading}
-              >
-                <Text style={styles.sendText}>→</Text>
+                <Text style={styles.keyboardTipCloseText}>×</Text>
               </TouchableOpacity>
             </View>
+            <Text style={styles.keyboardTipText}>
+              Use a Devanagari-capable keyboard like Gboard and switch to it
+              from your phone's keyboard selector.
+            </Text>
           </View>
+        )}
+
+        <View
+          style={[
+            styles.composerWrap,
+            // Only reserve the home-indicator inset when the keyboard is closed —
+            // once the keyboard is open it already covers that area, so adding
+            // insets.bottom on top of it created a dead gap above the keyboard.
+            { marginBottom: isKeyboardVisible ? 8 : Math.max(insets.bottom, 12) },
+          ]}
+        >
+          <TouchableOpacity
+            style={[styles.micPill, isRecording && styles.micPillActive]}
+            activeOpacity={0.8}
+            onPress={handleMic}
+            disabled={isLoading}
+            accessibilityRole="button"
+            accessibilityLabel={isRecording ? "Stop recording" : "Start recording"}
+          >
+            <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
+          </TouchableOpacity>
+          <TextInput
+            style={styles.composerField}
+            placeholder="कितेंय सांग.."
+            placeholderTextColor={theme.colors.textMuted}
+            value={inputText}
+            onChangeText={setInputText}
+            onSubmitEditing={handleSend}
+            editable={!isLoading && !isRecording}
+            multiline
+            maxLength={2000}
+          />
+          <TouchableOpacity
+            style={[
+              styles.sendPill,
+              (!inputText.trim() || isLoading) && styles.sendPillDisabled,
+            ]}
+            activeOpacity={0.85}
+            onPress={handleSend}
+            disabled={!inputText.trim() || isLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Text style={styles.sendText}>→</Text>
+          </TouchableOpacity>
         </View>
-      </ScreenWrapper>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
-  screen: { flex: 1 },
-  container: {
-    flex: 1,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.md,
-  },
   chatBody: {
     flex: 1,
+    paddingHorizontal: theme.spacing.lg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
     marginBottom: theme.spacing.md,
   },
   backButton: {
@@ -335,7 +387,7 @@ const styles = StyleSheet.create({
   },
 
   thread: { flex: 1 },
-  threadContent: { paddingBottom: 12 },
+  threadContent: { paddingBottom: 12, flexGrow: 1 },
   messageRow: {
     flexDirection: "row",
     gap: 10,
@@ -392,14 +444,13 @@ const styles = StyleSheet.create({
 
   composerWrap: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     gap: 10,
     padding: 12,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.xl,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: 12,
   },
   keyboardTip: {
     backgroundColor: theme.colors.surface,
@@ -461,9 +512,10 @@ const styles = StyleSheet.create({
   composerField: {
     flex: 1,
     minHeight: 44,
+    maxHeight: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: theme.radius.full,
+    borderRadius: theme.radius.xl,
     backgroundColor: theme.colors.surfaceElevated,
     borderWidth: 1,
     borderColor: theme.colors.border,
