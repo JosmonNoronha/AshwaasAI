@@ -22,7 +22,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "../constants/theme";
 import { BACKEND_URL } from "../constants/api";
 
-const ScreenWrapper = Platform.OS === "ios" ? KeyboardAvoidingView : View;
+const ScreenWrapper = KeyboardAvoidingView;
 
 export default function Chat() {
   const router = useRouter();
@@ -151,112 +151,114 @@ export default function Chat() {
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <ScreenWrapper
-      style={styles.container}
-      {...(Platform.OS === "ios" && { behavior: "padding", keyboardVerticalOffset: 0 })}
-    >
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.backText}>←</Text>
-          </TouchableOpacity>
-          <View style={styles.headerCopy}>
-            <Text style={styles.title}>AshwaasAI</Text>
+        style={styles.screen}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.backButton}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.backText}>←</Text>
+            </TouchableOpacity>
+            <View style={styles.headerCopy}>
+              <Text style={styles.title}>AshwaasAI</Text>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.chatBody}>
-          <ScrollView
-            ref={scrollRef}
-            style={styles.thread}
-            contentContainerStyle={styles.threadContent}
-            keyboardDismissMode={
-              Platform.OS === "ios" ? "interactive" : "on-drag"
-            }
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {messages.map((item, i) => {
-              const isUser = item.role === "user";
-              return (
-                <View
-                  key={i}
-                  style={[
-                    styles.messageRow,
-                    isUser ? styles.messageRowUser : styles.messageRowAssistant,
-                  ]}
-                >
-                  {!isUser && (
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>AI</Text>
-                    </View>
-                  )}
+          <View style={styles.chatBody}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.thread}
+              contentContainerStyle={styles.threadContent}
+              keyboardDismissMode={
+                Platform.OS === "ios" ? "interactive" : "on-drag"
+              }
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {messages.map((item, i) => {
+                const isUser = item.role === "user";
+                return (
                   <View
+                    key={i}
                     style={[
-                      styles.bubble,
-                      isUser ? styles.userBubble : styles.assistantBubble,
+                      styles.messageRow,
+                      isUser
+                        ? styles.messageRowUser
+                        : styles.messageRowAssistant,
                     ]}
                   >
-                    <Text
+                    {!isUser && (
+                      <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>AI</Text>
+                      </View>
+                    )}
+                    <View
                       style={[
-                        styles.bubbleText,
-                        isUser
-                          ? styles.userBubbleText
-                          : styles.assistantBubbleText,
+                        styles.bubble,
+                        isUser ? styles.userBubble : styles.assistantBubble,
                       ]}
                     >
-                      {item.text}
-                    </Text>
-                    <Text style={[styles.time, isUser && styles.timeUser]}>
-                      {item.time}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.bubbleText,
+                          isUser
+                            ? styles.userBubbleText
+                            : styles.assistantBubbleText,
+                        ]}
+                      >
+                        {item.text}
+                      </Text>
+                      <Text style={[styles.time, isUser && styles.timeUser]}>
+                        {item.time}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+
+              {/* Typing indicator */}
+              {isLoading && (
+                <View style={[styles.messageRow, styles.messageRowAssistant]}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>AI</Text>
+                  </View>
+                  <View style={[styles.bubble, styles.assistantBubble]}>
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.colors.primary}
+                    />
                   </View>
                 </View>
-              );
-            })}
+              )}
+            </ScrollView>
 
-            {/* Typing indicator */}
-            {isLoading && (
-              <View style={[styles.messageRow, styles.messageRowAssistant]}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>AI</Text>
+            {showKeyboardTip && (
+              <View style={styles.keyboardTip}>
+                <View style={styles.keyboardTipHeader}>
+                  <Text style={styles.keyboardTipLabel}>Input tip</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowKeyboardTip(false)}
+                    activeOpacity={0.8}
+                    style={styles.keyboardTipClose}
+                    accessibilityRole="button"
+                    accessibilityLabel="Dismiss keyboard tip"
+                  >
+                    <Text style={styles.keyboardTipCloseText}>×</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={[styles.bubble, styles.assistantBubble]}>
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.colors.primary}
-                  />
-                </View>
+                <Text style={styles.keyboardTipText}>
+                  Use a Devanagari-capable keyboard like Gboard and switch to it
+                  from your phone's keyboard selector.
+                </Text>
               </View>
             )}
-          </ScrollView>
 
-          {showKeyboardTip && (
-            <View style={styles.keyboardTip}>
-              <View style={styles.keyboardTipHeader}>
-                <Text style={styles.keyboardTipLabel}>Input tip</Text>
-                <TouchableOpacity
-                  onPress={() => setShowKeyboardTip(false)}
-                  activeOpacity={0.8}
-                  style={styles.keyboardTipClose}
-                  accessibilityRole="button"
-                  accessibilityLabel="Dismiss keyboard tip"
-                >
-                  <Text style={styles.keyboardTipCloseText}>×</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.keyboardTipText}>
-                Use a Devanagari-capable keyboard like Gboard and switch to it
-                from your phone's keyboard selector.
-              </Text>
-            </View>
-          )}
-
-          
             <View style={styles.composerWrap}>
               <TouchableOpacity
                 style={[styles.micPill, isRecording && styles.micPillActive]}
@@ -287,9 +289,8 @@ export default function Chat() {
                 <Text style={styles.sendText}>→</Text>
               </TouchableOpacity>
             </View>
-          
+          </View>
         </View>
-      </View>
       </ScreenWrapper>
     </SafeAreaView>
   );
@@ -297,6 +298,7 @@ export default function Chat() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
+  screen: { flex: 1 },
   container: {
     flex: 1,
     paddingHorizontal: theme.spacing.lg,
