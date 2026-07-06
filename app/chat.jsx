@@ -40,7 +40,7 @@ export default function Chat() {
     {
       id: nextMessageId(),
       role: "assistant",
-      text: "नमस्कार! हांव आशवासAI. तुमी कसले उलोवपाक शकतात?",
+      text: "नमस्कार! हांव AshwaasAI. तुमी कसले उलोवपाक शकतात?",
       time: _now(),
     },
   ]);
@@ -48,9 +48,10 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showKeyboardTip, setShowKeyboardTip] = useState(true);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   
+  const KEYBOARD_EXTRA_PADDING = 10;
+
   const composerOffset = useRef(new Animated.Value(insets.bottom)).current;
 
   // Scroll to bottom whenever messages change.
@@ -63,8 +64,7 @@ export default function Chat() {
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
-      setIsKeyboardVisible(true);
-      const height = e?.endCoordinates?.height ?? 0;
+      const height = (e?.endCoordinates?.height ?? 0) + KEYBOARD_EXTRA_PADDING;
       const duration = Platform.OS === "ios" ? (e?.duration || 250) : 200;
       Animated.timing(composerOffset, {
         toValue: height,
@@ -77,7 +77,6 @@ export default function Chat() {
       });
     });
     const hideSub = Keyboard.addListener(hideEvent, (e) => {
-      setIsKeyboardVisible(false);
       const duration = Platform.OS === "ios" ? (e?.duration || 250) : 200;
       Animated.timing(composerOffset, {
         toValue: insets.bottom,
@@ -287,66 +286,65 @@ export default function Chat() {
           )}
         </ScrollView>
 
-        {showKeyboardTip && !isKeyboardVisible && (
-          <View style={styles.keyboardTip}>
-            <View style={styles.keyboardTipHeader}>
-              <Text style={styles.keyboardTipLabel}>Input tip</Text>
-              <TouchableOpacity
-                onPress={() => setShowKeyboardTip(false)}
-                activeOpacity={0.8}
-                style={styles.keyboardTipClose}
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss keyboard tip"
-              >
-                <Text style={styles.keyboardTipCloseText}>×</Text>
-              </TouchableOpacity>
+        
+        <Animated.View style={{ marginBottom: composerOffset }}>
+          {showKeyboardTip && (
+            <View style={styles.keyboardTip}>
+              <View style={styles.keyboardTipHeader}>
+                <Text style={styles.keyboardTipLabel}>Input tip</Text>
+                <TouchableOpacity
+                  onPress={() => setShowKeyboardTip(false)}
+                  activeOpacity={0.8}
+                  style={styles.keyboardTipClose}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss keyboard tip"
+                >
+                  <Text style={styles.keyboardTipCloseText}>×</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.keyboardTipText}>
+                Use a Devanagari-capable keyboard like Gboard and switch to it
+                from your phone's keyboard selector.
+              </Text>
             </View>
-            <Text style={styles.keyboardTipText}>
-              Use a Devanagari-capable keyboard like Gboard and switch to it
-              from your phone's keyboard selector.
-            </Text>
-          </View>
-        )}
+          )}
 
-        {/* marginBottom is animated to exactly match the live keyboard height,
-            so the composer sits right above the keyboard on both platforms. */}
-        <Animated.View
-          style={[styles.composerWrap, { marginBottom: composerOffset }]}
-        >
-          <TouchableOpacity
-            style={[styles.micPill, isRecording && styles.micPillActive]}
-            activeOpacity={0.8}
-            onPress={handleMic}
-            disabled={isLoading}
-            accessibilityRole="button"
-            accessibilityLabel={isRecording ? "Stop recording" : "Start recording"}
-          >
-            <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
-          </TouchableOpacity>
-          <TextInput
-            style={styles.composerField}
-            placeholder="कितेंय सांग.."
-            placeholderTextColor={theme.colors.textMuted}
-            value={inputText}
-            onChangeText={setInputText}
-            onSubmitEditing={handleSend}
-            editable={!isLoading && !isRecording}
-            multiline
-            maxLength={2000}
-          />
-          <TouchableOpacity
-            style={[
-              styles.sendPill,
-              (!inputText.trim() || isLoading) && styles.sendPillDisabled,
-            ]}
-            activeOpacity={0.85}
-            onPress={handleSend}
-            disabled={!inputText.trim() || isLoading}
-            accessibilityRole="button"
-            accessibilityLabel="Send message"
-          >
-            <Text style={styles.sendText}>→</Text>
-          </TouchableOpacity>
+          <View style={styles.composerWrap}>
+            <TouchableOpacity
+              style={[styles.micPill, isRecording && styles.micPillActive]}
+              activeOpacity={0.8}
+              onPress={handleMic}
+              disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel={isRecording ? "Stop recording" : "Start recording"}
+            >
+              <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={styles.composerField}
+              placeholder="कितेंय सांग.."
+              placeholderTextColor={theme.colors.textMuted}
+              value={inputText}
+              onChangeText={setInputText}
+              onSubmitEditing={handleSend}
+              editable={!isLoading && !isRecording}
+              multiline
+              maxLength={2000}
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendPill,
+                (!inputText.trim() || isLoading) && styles.sendPillDisabled,
+              ]}
+              activeOpacity={0.85}
+              onPress={handleSend}
+              disabled={!inputText.trim() || isLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+            >
+              <Text style={styles.sendText}>→</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
       </View>
     </SafeAreaView>
