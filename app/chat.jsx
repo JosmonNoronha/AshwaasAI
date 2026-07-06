@@ -5,10 +5,10 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Keyboard,
+  Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -23,11 +23,6 @@ import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "../constants/theme";
 import { BACKEND_URL } from "../constants/api";
 
-// NOTE: Android has `softwareKeyboardLayoutMode: "resize"` configured in app.json,
-// so the OS already resizes the window when the keyboard opens there.
-// KeyboardAvoidingView should therefore do nothing extra on Android (behavior=undefined) —
-// applying "height" on top of that native resize is what caused the jumpy/double-shift bug.
-const KAV_BEHAVIOR = Platform.OS === "ios" ? "padding" : undefined;
 
 let messageIdCounter = 0;
 function nextMessageId() {
@@ -45,7 +40,7 @@ export default function Chat() {
     {
       id: nextMessageId(),
       role: "assistant",
-      text: "नमस्कार! हांव AshwaasAI. तुमी कसले उलोवपाक शकतात?",
+      text: "नमस्कार! हांव आशवासAI. तुमी कसले उलोवपाक शकतात?",
       time: _now(),
     },
   ]);
@@ -55,32 +50,47 @@ export default function Chat() {
   const [showKeyboardTip, setShowKeyboardTip] = useState(true);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
+  
+  const composerOffset = useRef(new Animated.Value(insets.bottom)).current;
+
   // Scroll to bottom whenever messages change.
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
 
-  // Scroll to bottom whenever the keyboard opens (fixes last message hiding behind composer).
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
-    const showSub = Keyboard.addListener(showEvent, () => {
+    const showSub = Keyboard.addListener(showEvent, (e) => {
       setIsKeyboardVisible(true);
+      const height = e?.endCoordinates?.height ?? 0;
+      const duration = Platform.OS === "ios" ? (e?.duration || 250) : 200;
+      Animated.timing(composerOffset, {
+        toValue: height,
+        duration,
+        useNativeDriver: false,
+      }).start();
       // slight delay lets the layout settle before we scroll
       requestAnimationFrame(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
       });
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
       setIsKeyboardVisible(false);
+      const duration = Platform.OS === "ios" ? (e?.duration || 250) : 200;
+      Animated.timing(composerOffset, {
+        toValue: insets.bottom,
+        duration,
+        useNativeDriver: false,
+      }).start();
     });
 
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
+  }, [insets.bottom]);
 
   // ── helpers ───────────────────────────────────────────────────────────────
   function _now() {
@@ -206,11 +216,7 @@ export default function Chat() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.chatBody}
-        behavior={KAV_BEHAVIOR}
-        keyboardVerticalOffset={0}
-      >
+      <View style={styles.chatBody}>
         <ScrollView
           ref={scrollRef}
           style={styles.thread}
@@ -302,14 +308,10 @@ export default function Chat() {
           </View>
         )}
 
-        <View
-          style={[
-            styles.composerWrap,
-            // Only reserve the home-indicator inset when the keyboard is closed —
-            // once the keyboard is open it already covers that area, so adding
-            // insets.bottom on top of it created a dead gap above the keyboard.
-            { marginBottom: isKeyboardVisible ? 8 : Math.max(insets.bottom, 12) },
-          ]}
+        {/* marginBottom is animated to exactly match the live keyboard height,
+            so the composer sits right above the keyboard on both platforms. */}
+        <Animated.View
+          style={[styles.composerWrap, { marginBottom: composerOffset }]}
         >
           <TouchableOpacity
             style={[styles.micPill, isRecording && styles.micPillActive]}
@@ -345,8 +347,8 @@ export default function Chat() {
           >
             <Text style={styles.sendText}>→</Text>
           </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+        </Animated.View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -512,7 +514,7 @@ const styles = StyleSheet.create({
   composerField: {
     flex: 1,
     minHeight: 44,
-    maxHeight: 10,
+    maxHeight: 120,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: theme.radius.xl,
