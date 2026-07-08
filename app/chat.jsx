@@ -10,7 +10,7 @@ import {
   Keyboard,
   Animated,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -21,8 +21,8 @@ import {
 } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "../constants/theme";
-import { BACKEND_URL } from "../constants/api";
-
+import { authFetch } from "../constants/api";
+import { loadLocalMessages, saveLocalMessages } from "../constants/localChatStore";
 
 let messageIdCounter = 0;
 function nextMessageId() {
@@ -30,29 +30,98 @@ function nextMessageId() {
   return `m-${Date.now()}-${messageIdCounter}`;
 }
 
+const GREETING = "नमस्कार! हांव AshwaasAI. तुमी कसले उलोवपाक शकतात?";
+
+function _now() {
+  return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 export default function Chat() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const { id } = useLocalSearchParams();
 
-  const [messages, setMessages] = useState([
-    {
-      id: nextMessageId(),
-      role: "assistant",
-      text: "नमस्कार! हांव AshwaasAI. तुमी कसले उलोवपाक शकतात?",
-      time: _now(),
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showKeyboardTip, setShowKeyboardTip] = useState(true);
 
-  
-  const KEYBOARD_EXTRA_PADDING = 10;
+  // Conversation bootstrap state
+  const [conversationId, setConversationId] = useState(null);
+  const [isConversationReady, setIsConversationReady] = useState(false);
+  const [conversationError, setConversationError] = useState("");
+  const didInitConversation = useRef(false);
+  const conversationIdRef = useRef(null);
 
+  const KEYBOARD_EXTRA_PADDING = 10;
   const composerOffset = useRef(new Animated.Value(insets.bottom)).current;
+
+  // ── Bootstrap: create or load the conversation this screen is bound to ───
+  useEffect(() => {
+    if (didInitConversation.current) return;
+    didInitConversation.current = true;
+
+    async function init() {
+      try {
+        if (!id || id === "new") {
+          const conv = await authFetch("/conversations", {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          conversationIdRef.current = conv.id;
+          setConversationId(conv.id);
+          setMessages([
+            { id: nextMessageId(), role: "assistant", text: GREETING, time: _now() },
+          ]);
+        } else {
+          // Existing conversation: load the actual displayed history from
+          // this device's local storage, not from the backend's session
+          // memory (which only holds translated text for model context).
+          conversationIdRef.current = id;
+          setConversationId(id);
+
+          const local = await loadLocalMessages(id);
+          if (local && local.length > 0) {
+            setMessages(local);
+          } else {
+            // Nothing stored locally for this conversation (new device,
+            // reinstalled app, or cleared storage) — start fresh.
+            setMessages([
+              { id: nextMessageId(), role: "assistant", text: GREETING, time: _now() },
+            ]);
+          }
+        }
+      } catch (e) {
+        setConversationError(e.message || "Could not load this conversation.");
+      } finally {
+        setIsConversationReady(true);
+      }
+    }
+
+    init();
+  }, [id]);
+
+  // Persist the actual displayed conversation locally, on every change.
+  useEffect(() => {
+    if (conversationId && messages.length > 0) {
+      saveLocalMessages(conversationId, messages);
+    }
+  }, [messages, conversationId]);
+
+  // Fire-and-forget /session/end when leaving this screen.
+  useEffect(() => {
+    return () => {
+      const cid = conversationIdRef.current;
+      if (!cid) return;
+      authFetch("/session/end", {
+        method: "POST",
+        body: JSON.stringify({ conversation_id: cid }),
+      }).catch(() => {});
+    };
+  }, []);
 
   // Scroll to bottom whenever messages change.
   useEffect(() => {
@@ -71,7 +140,6 @@ export default function Chat() {
         duration,
         useNativeDriver: false,
       }).start();
-      // slight delay lets the layout settle before we scroll
       requestAnimationFrame(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
       });
@@ -92,13 +160,6 @@ export default function Chat() {
   }, [insets.bottom]);
 
   // ── helpers ───────────────────────────────────────────────────────────────
-  function _now() {
-    return new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
   function _addMessage(role, text) {
     const id = nextMessageId();
     setMessages((prev) => [...prev, { id, role, text, time: _now() }]);
@@ -106,28 +167,20 @@ export default function Chat() {
   }
 
   function _updateMessage(id, text) {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, text } : m))
-    );
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, text } : m)));
   }
 
   async function _callBackend(body) {
-    const res = await fetch(`${BACKEND_URL}/chat`, {
+    return authFetch("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, conversation_id: conversationIdRef.current }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `Server error ${res.status}`);
-    }
-    return res.json();
   }
 
   // ── send text ──────────────────────────────────────────────────────────────
   async function handleSend() {
     const text = inputText.trim();
-    if (!text || isLoading) return;
+    if (!text || isLoading || !isConversationReady || !conversationId) return;
     setInputText("");
     _addMessage("user", text);
     setIsLoading(true);
@@ -143,8 +196,9 @@ export default function Chat() {
 
   // ── mic: tap to start, tap again to stop + send ───────────────────────────
   async function handleMic() {
+    if (!isConversationReady || !conversationId) return;
+
     if (isRecording) {
-      // Stop recording and send
       let placeholderId = null;
       try {
         await audioRecorder.stop();
@@ -162,7 +216,6 @@ export default function Chat() {
           encoding: FileSystem.EncodingType.Base64,
         });
         const data = await _callBackend({ audio_b64 });
-        // Replace the placeholder with the actual transcription (tracked by id, not text match)
         _updateMessage(placeholderId, data.user_konkani || "🎤 Voice message");
         _addMessage("assistant", data.assistant_konkani);
       } catch (e) {
@@ -175,7 +228,6 @@ export default function Chat() {
         setIsLoading(false);
       }
     } else {
-      // Start recording
       try {
         const { granted } = await requestRecordingPermissionsAsync();
         if (!granted) {
@@ -196,10 +248,11 @@ export default function Chat() {
     }
   }
 
+  const inputDisabled = isLoading || isRecording || !isConversationReady || !conversationId;
+
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      {/* Header sits OUTSIDE the KeyboardAvoidingView so it never shifts when the keyboard opens */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -216,136 +269,119 @@ export default function Chat() {
       </View>
 
       <View style={styles.chatBody}>
-        <ScrollView
-          ref={scrollRef}
-          style={styles.thread}
-          contentContainerStyle={styles.threadContent}
-          keyboardDismissMode={
-            Platform.OS === "ios" ? "interactive" : "on-drag"
-          }
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={() =>
-            scrollRef.current?.scrollToEnd({ animated: true })
-          }
-        >
-          {messages.map((item) => {
-            const isUser = item.role === "user";
-            return (
-              <View
-                key={item.id}
-                style={[
-                  styles.messageRow,
-                  isUser
-                    ? styles.messageRowUser
-                    : styles.messageRowAssistant,
-                ]}
-              >
-                {!isUser && (
+        {!isConversationReady ? (
+          <View style={styles.centerFill}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+          </View>
+        ) : conversationError ? (
+          <View style={styles.centerFill}>
+            <Text style={styles.errorText}>⚠ {conversationError}</Text>
+          </View>
+        ) : (
+          <>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.thread}
+              contentContainerStyle={styles.threadContent}
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+            >
+              {messages.map((item) => {
+                const isUser = item.role === "user";
+                return (
+                  <View
+                    key={item.id}
+                    style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowAssistant]}
+                  >
+                    {!isUser && (
+                      <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>AI</Text>
+                      </View>
+                    )}
+                    <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
+                      <Text style={[styles.bubbleText, isUser ? styles.userBubbleText : styles.assistantBubbleText]}>
+                        {item.text}
+                      </Text>
+                      {!!item.time && (
+                        <Text style={[styles.time, isUser && styles.timeUser]}>{item.time}</Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+
+              {isLoading && (
+                <View style={[styles.messageRow, styles.messageRowAssistant]}>
                   <View style={styles.avatar}>
                     <Text style={styles.avatarText}>AI</Text>
                   </View>
-                )}
-                <View
-                  style={[
-                    styles.bubble,
-                    isUser ? styles.userBubble : styles.assistantBubble,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.bubbleText,
-                      isUser
-                        ? styles.userBubbleText
-                        : styles.assistantBubbleText,
-                    ]}
-                  >
-                    {item.text}
-                  </Text>
-                  <Text style={[styles.time, isUser && styles.timeUser]}>
-                    {item.time}
+                  <View style={[styles.bubble, styles.assistantBubble]}>
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            <Animated.View style={{ marginBottom: composerOffset }}>
+              {showKeyboardTip && (
+                <View style={styles.keyboardTip}>
+                  <View style={styles.keyboardTipHeader}>
+                    <Text style={styles.keyboardTipLabel}>Input tip</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowKeyboardTip(false)}
+                      activeOpacity={0.8}
+                      style={styles.keyboardTipClose}
+                      accessibilityRole="button"
+                      accessibilityLabel="Dismiss keyboard tip"
+                    >
+                      <Text style={styles.keyboardTipCloseText}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.keyboardTipText}>
+                    Use a Devanagari-capable keyboard like Gboard and switch to it
+                    from your phone's keyboard selector.
                   </Text>
                 </View>
-              </View>
-            );
-          })}
+              )}
 
-          {/* Typing indicator */}
-          {isLoading && (
-            <View style={[styles.messageRow, styles.messageRowAssistant]}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>AI</Text>
-              </View>
-              <View style={[styles.bubble, styles.assistantBubble]}>
-                <ActivityIndicator
-                  size="small"
-                  color={theme.colors.primary}
-                />
-              </View>
-            </View>
-          )}
-        </ScrollView>
-
-        
-        <Animated.View style={{ marginBottom: composerOffset }}>
-          {showKeyboardTip && (
-            <View style={styles.keyboardTip}>
-              <View style={styles.keyboardTipHeader}>
-                <Text style={styles.keyboardTipLabel}>Input tip</Text>
+              <View style={styles.composerWrap}>
                 <TouchableOpacity
-                  onPress={() => setShowKeyboardTip(false)}
+                  style={[styles.micPill, isRecording && styles.micPillActive]}
                   activeOpacity={0.8}
-                  style={styles.keyboardTipClose}
+                  onPress={handleMic}
+                  disabled={inputDisabled && !isRecording}
                   accessibilityRole="button"
-                  accessibilityLabel="Dismiss keyboard tip"
+                  accessibilityLabel={isRecording ? "Stop recording" : "Start recording"}
                 >
-                  <Text style={styles.keyboardTipCloseText}>×</Text>
+                  <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.composerField}
+                  placeholder="कितेंय सांग.."
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={inputText}
+                  onChangeText={setInputText}
+                  onSubmitEditing={handleSend}
+                  editable={!inputDisabled}
+                  multiline
+                  maxLength={2000}
+                />
+                <TouchableOpacity
+                  style={[styles.sendPill, (!inputText.trim() || inputDisabled) && styles.sendPillDisabled]}
+                  activeOpacity={0.85}
+                  onPress={handleSend}
+                  disabled={!inputText.trim() || inputDisabled}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send message"
+                >
+                  <Text style={styles.sendText}>→</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.keyboardTipText}>
-                Use a Devanagari-capable keyboard like Gboard and switch to it
-                from your phone's keyboard selector.
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.composerWrap}>
-            <TouchableOpacity
-              style={[styles.micPill, isRecording && styles.micPillActive]}
-              activeOpacity={0.8}
-              onPress={handleMic}
-              disabled={isLoading}
-              accessibilityRole="button"
-              accessibilityLabel={isRecording ? "Stop recording" : "Start recording"}
-            >
-              <Text style={styles.micText}>{isRecording ? "⏹" : "🎤"}</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={styles.composerField}
-              placeholder="कितेंय सांग.."
-              placeholderTextColor={theme.colors.textMuted}
-              value={inputText}
-              onChangeText={setInputText}
-              onSubmitEditing={handleSend}
-              editable={!isLoading && !isRecording}
-              multiline
-              maxLength={2000}
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendPill,
-                (!inputText.trim() || isLoading) && styles.sendPillDisabled,
-              ]}
-              activeOpacity={0.85}
-              onPress={handleSend}
-              disabled={!inputText.trim() || isLoading}
-              accessibilityRole="button"
-              accessibilityLabel="Send message"
-            >
-              <Text style={styles.sendText}>→</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+            </Animated.View>
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -353,8 +389,13 @@ export default function Chat() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
-  chatBody: {
-    flex: 1,
+  chatBody: { flex: 1, paddingHorizontal: theme.spacing.lg },
+  centerFill: { flex: 1, alignItems: "center", justifyContent: "center" },
+  errorText: {
+    color: theme.colors.danger,
+    fontFamily: theme.fonts.body,
+    fontSize: 14,
+    textAlign: "center",
     paddingHorizontal: theme.spacing.lg,
   },
   header: {
@@ -374,26 +415,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  backText: {
-    color: theme.colors.primary,
-    fontSize: 20,
-    fontFamily: theme.fonts.bodySemiBold,
-  },
+  backText: { color: theme.colors.primary, fontSize: 20, fontFamily: theme.fonts.bodySemiBold },
   headerCopy: { flex: 1, paddingHorizontal: 12 },
-  title: {
-    fontFamily: theme.fonts.bodySemiBold,
-    color: theme.colors.text,
-    fontSize: 18,
-  },
-
+  title: { fontFamily: theme.fonts.bodySemiBold, color: theme.colors.text, fontSize: 18 },
   thread: { flex: 1 },
   threadContent: { paddingBottom: 12, flexGrow: 1 },
-  messageRow: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "flex-end",
-    marginBottom: 12,
-  },
+  messageRow: { flexDirection: "row", gap: 10, alignItems: "flex-end", marginBottom: 12 },
   messageRowUser: { flexDirection: "row-reverse" },
   messageRowAssistant: {},
   avatar: {
@@ -407,41 +434,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
-  avatarText: {
-    color: theme.colors.primary,
-    fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 11,
-  },
-  bubble: {
-    maxWidth: "78%",
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
+  avatarText: { color: theme.colors.primary, fontFamily: theme.fonts.bodySemiBold, fontSize: 11 },
+  bubble: { maxWidth: "78%", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12 },
   assistantBubble: {
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderBottomLeftRadius: 4,
   },
-  userBubble: {
-    backgroundColor: theme.colors.primary,
-    borderBottomRightRadius: 4,
-  },
+  userBubble: { backgroundColor: theme.colors.primary, borderBottomRightRadius: 4 },
   bubbleText: { fontSize: 15, lineHeight: 22 },
-  assistantBubbleText: {
-    color: theme.colors.text,
-    fontFamily: theme.fonts.body,
-  },
+  assistantBubbleText: { color: theme.colors.text, fontFamily: theme.fonts.body },
   userBubbleText: { color: "#fff", fontFamily: theme.fonts.body },
-  time: {
-    marginTop: 6,
-    fontSize: 10,
-    color: theme.colors.textMuted,
-    fontFamily: theme.fonts.body,
-  },
+  time: { marginTop: 6, fontSize: 10, color: theme.colors.textMuted, fontFamily: theme.fonts.body },
   timeUser: { color: "rgba(255,255,255,0.72)" },
-
   composerWrap: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -484,18 +490,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  keyboardTipCloseText: {
-    color: theme.colors.textSecondary,
-    fontSize: 18,
-    lineHeight: 18,
-    marginTop: -1,
-  },
-  keyboardTipText: {
-    color: theme.colors.textSecondary,
-    fontFamily: theme.fonts.body,
-    fontSize: 13,
-    lineHeight: 19,
-  },
+  keyboardTipCloseText: { color: theme.colors.textSecondary, fontSize: 18, lineHeight: 18, marginTop: -1 },
+  keyboardTipText: { color: theme.colors.textSecondary, fontFamily: theme.fonts.body, fontSize: 13, lineHeight: 19 },
   micPill: {
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -504,10 +500,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  micPillActive: {
-    backgroundColor: theme.colors.primaryGlow,
-    borderColor: theme.colors.primary,
-  },
+  micPillActive: { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary },
   micText: { fontSize: 16 },
   composerField: {
     flex: 1,
@@ -531,9 +524,5 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   sendPillDisabled: { backgroundColor: theme.colors.surfaceElevated },
-  sendText: {
-    color: "#fff",
-    fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 18,
-  },
+  sendText: { color: "#fff", fontFamily: theme.fonts.bodySemiBold, fontSize: 18 },
 });

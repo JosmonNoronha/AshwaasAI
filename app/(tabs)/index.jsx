@@ -4,37 +4,54 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
+import { authFetch } from "../../constants/api";
 
-const conversations = [
-  {
-    id: "c1",
-    title: "Session with MindfulAI",
-    last: "Thanks — that helped me calm down",
-    time: "Jun 21",
-    unread: true,
-  },
-  {
-    id: "c2",
-    title: "Morning check-in",
-    last: "Feeling a bit overwhelmed today",
-    time: "Jun 20",
-    unread: false,
-  },
-  {
-    id: "c3",
-    title: "Reflection: work stress",
-    last: "I set a small boundary at work",
-    time: "Jun 18",
-    unread: false,
-  },
-];
+function formatDate(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
 
 export default function Home() {
   const router = useRouter();
+  const [conversations, setConversations] = useState([]);
+  const [status, setStatus] = useState("loading"); // loading | ready | error
+  const [errorText, setErrorText] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadConversations = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setStatus("loading");
+    }
+    try {
+      const data = await authFetch("/conversations");
+      setConversations(data);
+      setStatus("ready");
+    } catch (e) {
+      setErrorText(e.message || "Could not load conversations.");
+      setStatus("error");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadConversations();
+    }, [loadConversations])
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -42,6 +59,13 @@ export default function Home() {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadConversations(true)}
+            tintColor={theme.colors.primary}
+          />
+        }
       >
         <View style={styles.header}>
           <View>
@@ -70,31 +94,48 @@ export default function Home() {
         </View>
 
         <Text style={styles.sectionTitle}>All conversations</Text>
-        <View style={{ gap: 10, marginBottom: theme.spacing.lg }}>
-          {conversations.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              onPress={() => router.push(`/chat?id=${c.id}`)}
-              activeOpacity={0.9}
-              style={styles.convoCard}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.infoTitle}>{c.title}</Text>
-                <Text style={styles.infoBody} numberOfLines={1}>
-                  {c.last}
-                </Text>
-              </View>
-              <View style={{ alignItems: "flex-end", marginLeft: 12 }}>
-                <Text style={styles.convoTime}>{c.time}</Text>
-                {c.unread && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadText}>●</Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+
+        {status === "loading" && (
+          <View style={styles.stateBox}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+          </View>
+        )}
+
+        {status === "error" && (
+          <View style={styles.stateBox}>
+            <Text style={styles.errorText}>⚠ {errorText}</Text>
+          </View>
+        )}
+
+        {status === "ready" && conversations.length === 0 && (
+          <View style={styles.stateBox}>
+            <Text style={styles.emptyText}>
+              No conversations yet. Tap "Start new" to begin.
+            </Text>
+          </View>
+        )}
+
+        {status === "ready" && conversations.length > 0 && (
+          <View style={{ gap: 10, marginBottom: theme.spacing.lg }}>
+            {conversations.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                onPress={() => router.push(`/chat?id=${c.id}`)}
+                activeOpacity={0.9}
+                style={styles.convoCard}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoTitle} numberOfLines={1}>
+                    {c.title || "New chat"}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end", marginLeft: 12 }}>
+                  <Text style={styles.convoTime}>{formatDate(c.updated_at)}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -114,19 +155,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: theme.spacing.lg,
   },
-  kicker: {
-    fontFamily: theme.fonts.bodySemiBold,
-    color: theme.colors.textSecondary,
-    fontSize: 12,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  name: {
-    fontFamily: theme.fonts.display,
-    color: theme.colors.text,
-    fontSize: 24,
-    marginTop: 4,
-  },
+  name: { fontFamily: theme.fonts.display, color: theme.colors.text, fontSize: 24, marginTop: 4 },
   avatar: {
     width: 48,
     height: 48,
@@ -137,11 +166,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  avatarText: {
-    color: theme.colors.text,
-    fontFamily: theme.fonts.bodySemiBold,
-    letterSpacing: 1,
-  },
+  avatarText: { color: theme.colors.text, fontFamily: theme.fonts.bodySemiBold, letterSpacing: 1 },
   heroCard: {
     borderRadius: theme.radius.xl,
     padding: theme.spacing.lg,
@@ -178,24 +203,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
-  primaryButtonText: {
-    color: "#fff",
-    fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 14,
-  },
-  secondaryButton: {
-    backgroundColor: theme.colors.surfaceElevated,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  secondaryButtonText: {
-    color: theme.colors.text,
-    fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 14,
-  },
+  primaryButtonText: { color: "#fff", fontFamily: theme.fonts.bodySemiBold, fontSize: 14 },
   sectionTitle: {
     fontFamily: theme.fonts.bodySemiBold,
     color: theme.colors.textSecondary,
@@ -204,14 +212,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 12,
     marginTop: 8,
-  },
-  cardGrid: { gap: 10, marginBottom: theme.spacing.lg },
-  infoCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   convoCard: {
     backgroundColor: theme.colors.surface,
@@ -222,69 +222,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  convoTime: {
-    fontFamily: theme.fonts.bodySemiBold,
-    color: theme.colors.textSecondary,
-    fontSize: 12,
-  },
-  unreadBadge: {
-    marginTop: 8,
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  unreadText: {
-    color: "#fff",
-    fontSize: 11,
-    fontFamily: theme.fonts.bodySemiBold,
-  },
-  infoTitle: {
-    fontFamily: theme.fonts.bodySemiBold,
-    color: theme.colors.text,
-    fontSize: 15,
-    marginBottom: 4,
-  },
-  infoBody: {
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 10,
-  },
-  infoLink: {
-    fontFamily: theme.fonts.bodySemiBold,
-    color: theme.colors.primary,
-    fontSize: 13,
-  },
-  noteCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    gap: 12,
-  },
-  stepRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  stepIndex: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: theme.colors.primaryGlow,
+  convoTime: { fontFamily: theme.fonts.bodySemiBold, color: theme.colors.textSecondary, fontSize: 12 },
+  infoTitle: { fontFamily: theme.fonts.bodySemiBold, color: theme.colors.text, fontSize: 15 },
+  stateBox: {
+    paddingVertical: 28,
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
   },
-  stepIndexText: {
-    color: theme.colors.primary,
-    fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 13,
-  },
-  stepText: {
-    flex: 1,
+  errorText: {
+    color: theme.colors.danger,
     fontFamily: theme.fonts.body,
+    fontSize: 13,
+    textAlign: "center",
+  },
+  emptyText: {
     color: theme.colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
+    fontFamily: theme.fonts.body,
+    fontSize: 13,
+    textAlign: "center",
   },
 });
