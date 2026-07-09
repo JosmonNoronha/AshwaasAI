@@ -6,13 +6,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
 import { authFetch } from "../../constants/api";
-import { loadConversationList } from "../../constants/localChatStore";
+import { loadConversationList, deleteConversation } from "../../constants/localChatStore";
 
 function formatDate(iso) {
   try {
@@ -53,6 +54,31 @@ export default function Home() {
       loadConversations();
     }, [loadConversations])
   );
+
+  async function handleDelete(id, title) {
+    Alert.alert(
+      "Delete chat?",
+      `"${title || "This chat"}" will be permanently deleted. This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await authFetch(`/conversations/${id}`, { method: "DELETE" });
+            } catch (e) {
+              console.warn("Backend delete failed:", e.message);
+              // Still remove it locally below — don't leave a stuck chat in
+              // the list just because the network call failed.
+            }
+            await deleteConversation(id);
+            setConversations((prev) => prev.filter((c) => c.id !== id));
+          },
+        },
+      ]
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -119,21 +145,29 @@ export default function Home() {
         {status === "ready" && conversations.length > 0 && (
           <View style={{ gap: 10, marginBottom: theme.spacing.lg }}>
             {conversations.map((c) => (
-              <TouchableOpacity
-                key={c.id}
-                onPress={() => router.push(`/chat?id=${c.id}`)}
-                activeOpacity={0.9}
-                style={styles.convoCard}
-              >
-                <View style={{ flex: 1 }}>
+              <View key={c.id} style={styles.convoCard}>
+                <TouchableOpacity
+                  onPress={() => router.push(`/chat?id=${c.id}`)}
+                  activeOpacity={0.9}
+                  style={styles.convoMain}
+                >
                   <Text style={styles.infoTitle} numberOfLines={1}>
                     {c.title || "New chat"}
                   </Text>
-                </View>
-                <View style={{ alignItems: "flex-end", marginLeft: 12 }}>
                   <Text style={styles.convoTime}>{formatDate(c.updated_at)}</Text>
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => handleDelete(c.id, c.title)}
+                  activeOpacity={0.7}
+                  style={styles.deleteButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete chat"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={styles.deleteIcon}>🗑</Text>
+                </TouchableOpacity>
+              </View>
             ))}
           </View>
         )}
@@ -217,14 +251,31 @@ const styles = StyleSheet.create({
   convoCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
     flexDirection: "row",
     alignItems: "center",
+    paddingRight: theme.spacing.sm,
+  },
+  convoMain: {
+    flex: 1,
+    padding: theme.spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   convoTime: { fontFamily: theme.fonts.bodySemiBold, color: theme.colors.textSecondary, fontSize: 12 },
-  infoTitle: { fontFamily: theme.fonts.bodySemiBold, color: theme.colors.text, fontSize: 15 },
+  infoTitle: { fontFamily: theme.fonts.bodySemiBold, color: theme.colors.text, fontSize: 15, flexShrink: 1, marginRight: 10 },
+  deleteButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(239, 68, 68, 0.16)",
+    marginLeft: 4,
+  },
+  deleteIcon: { fontSize: 17 },
   stateBox: {
     paddingVertical: 28,
     alignItems: "center",
