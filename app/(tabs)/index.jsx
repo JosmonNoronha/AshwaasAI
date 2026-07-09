@@ -12,6 +12,7 @@ import { useCallback, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
 import { authFetch } from "../../constants/api";
+import { loadConversationList } from "../../constants/localChatStore";
 
 function formatDate(iso) {
   try {
@@ -36,7 +37,7 @@ export default function Home() {
       setStatus("loading");
     }
     try {
-      const data = await authFetch("/conversations");
+      const data = await loadConversationList();
       setConversations(data);
       setStatus("ready");
     } catch (e) {

@@ -22,7 +22,7 @@ import {
 import * as FileSystem from "expo-file-system/legacy";
 import { theme } from "../constants/theme";
 import { authFetch } from "../constants/api";
-import { loadLocalMessages, saveLocalMessages } from "../constants/localChatStore";
+import { loadLocalMessages, saveLocalMessages, upsertConversation } from "../constants/localChatStore";
 
 let messageIdCounter = 0;
 function nextMessageId() {
@@ -73,6 +73,7 @@ export default function Chat() {
           });
           conversationIdRef.current = conv.id;
           setConversationId(conv.id);
+          await upsertConversation({ id: conv.id, title: "New chat", updated_at: new Date().toISOString() });
           setMessages([
             { id: nextMessageId(), role: "assistant", text: GREETING, time: _now() },
           ]);
@@ -181,6 +182,7 @@ export default function Chat() {
   async function handleSend() {
     const text = inputText.trim();
     if (!text || isLoading || !isConversationReady || !conversationId) return;
+    const isFirstMessage = messages.length <= 1; 
     setInputText("");
     _addMessage("user", text);
     setIsLoading(true);
@@ -191,6 +193,11 @@ export default function Chat() {
       _addMessage("assistant", `⚠ ${e.message}`);
     } finally {
       setIsLoading(false);
+      await upsertConversation({
+        id: conversationId,
+        title: isFirstMessage ? text.slice(0, 60) : undefined,
+        updated_at: new Date().toISOString(),
+      });
     }
   }
 
@@ -200,6 +207,7 @@ export default function Chat() {
 
     if (isRecording) {
       let placeholderId = null;
+      const isFirstMessage = messages.length <= 1; 
       try {
         await audioRecorder.stop();
         const uri = audioRecorder.uri;
@@ -218,6 +226,12 @@ export default function Chat() {
         const data = await _callBackend({ audio_b64 });
         _updateMessage(placeholderId, data.user_konkani || "🎤 Voice message");
         _addMessage("assistant", data.assistant_konkani);
+
+        await upsertConversation({
+          id: conversationId,
+          title: isFirstMessage && data.user_konkani ? data.user_konkani.slice(0, 60) : undefined,
+          updated_at: new Date().toISOString(),
+        });
       } catch (e) {
         if (placeholderId) {
           _updateMessage(placeholderId, "⚠ Could not transcribe voice message");
