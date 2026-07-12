@@ -98,9 +98,6 @@ export default function Home() {
           <View>
             <Text style={styles.name}>आशवास</Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>MH</Text>
-          </View>
         </View>
 
         <View style={styles.heroCard}>

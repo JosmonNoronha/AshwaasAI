@@ -42,7 +42,7 @@ export default function TabLayout() {
         name="mood"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Mood" focused={focused} />
+            <TabIcon label="Help" focused={focused} />
           ),
         }}
       />

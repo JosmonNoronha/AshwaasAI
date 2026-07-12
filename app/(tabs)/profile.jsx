@@ -114,18 +114,15 @@ export default function Profile() {
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.supportCard}>
+        {/* <View style={styles.supportCard}>
           <Text style={styles.supportTitle}>Emergency support</Text>
           <Text style={styles.supportText}>
             Keep clear access to crisis resources and licensed care information
             in the finished product.
           </Text>
-        </View>
+        </View> */}
 
-        <Text style={styles.disclaimer}>
-          This app is a frontend preview. Do not rely on it for emergency or
-          clinical use until your full backend and support flows are live.
-        </Text>
+        
       </ScrollView>
     </SafeAreaView>
   );
