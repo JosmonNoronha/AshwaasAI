@@ -30,7 +30,7 @@ function nextMessageId() {
   return `m-${Date.now()}-${messageIdCounter}`;
 }
 
-const GREETING = "नमस्कार! हांव AshwaasAI. तुमी कसले उलोवपाक शकतात?";
+const GREETING = "नमस्कार! हांव आशवास AI. तुमच्या मनांतले विचार सांगात";
 
 function _now() {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

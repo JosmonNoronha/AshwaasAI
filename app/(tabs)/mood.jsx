@@ -169,7 +169,53 @@ function callNumber(tel) {
     });
 }
 
+// ── Reusable pieces ──────────────────────────────────────────────────────
+
+function AccordionSection({ title, subtitle, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <View style={styles.accordionCard}>
+      <TouchableOpacity
+        style={styles.accordionHeader}
+        activeOpacity={0.7}
+        onPress={() => setOpen((v) => !v)}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={styles.accordionTitle}>{title}</Text>
+          {!!subtitle && <Text style={styles.accordionSubtitle}>{subtitle}</Text>}
+        </View>
+        <Text style={styles.accordionIcon}>{open ? "−" : "+"}</Text>
+      </TouchableOpacity>
+      {open && <View style={styles.accordionBody}>{children}</View>}
+    </View>
+  );
+}
+
+function ExpandableRow({ title, detail, isLast, badge }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.expandRow}
+        activeOpacity={0.7}
+        onPress={() => setOpen((v) => !v)}
+      >
+        {badge ? (
+          <View style={styles.expandRowBadge}>
+            <Text style={styles.expandRowBadgeText}>{badge}</Text>
+          </View>
+        ) : null}
+        <Text style={styles.expandRowTitle}>{title}</Text>
+        <Text style={styles.expandRowIcon}>{open ? "−" : "+"}</Text>
+      </TouchableOpacity>
+      {open && <Text style={styles.expandRowDetail}>{detail}</Text>}
+      {!isLast && <View style={styles.divider} />}
+    </View>
+  );
+}
+
 export default function Mood() {
+  const [tab, setTab] = useState("calm"); // "calm" | "help"
   const breathing = useBreathingExercise();
   const currentPhase = breathing.phaseIndex !== null ? BREATH_PHASES[breathing.phaseIndex] : null;
 
@@ -180,119 +226,145 @@ export default function Mood() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.kicker}>आदार आनी शांती</Text>
-        <Text style={styles.heading}>आतांच वापरपाक येतात असली साधनां, आनी कॉल करपाक लोक</Text>
-        <Text style={styles.subheading}>
-          तुमकां थंड जावपाक कांय सोपी व्यायाम, आनी जर व्यायामा परस चड मजत जाय जाल्यार खर्‍या माणसांची हेल्पलायन.
-        </Text>
+        <Text style={styles.heading}>आतां कितें करूं येता?</Text>
 
-        {/* ── Crisis banner ─────────────────────────────────────────── */}
+        {/* ── Crisis banner (always visible) ────────────────────────── */}
         <TouchableOpacity
           style={styles.crisisBanner}
           activeOpacity={0.88}
           onPress={() => callNumber("112")}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.crisisTitle}>तुर्त धोक्यांत आसात?</Text>
-            <Text style={styles.crisisText}>
-              जर तुमी वा तुमच्या वांगडा आशिल्लो कोणूय आतां सुरक्षीत ना, तर आपत्कालीन सेवेक कॉल करात.
-            </Text>
-          </View>
+          <Text style={styles.crisisText}>
+            तुर्त धोक्यांत आसात? <Text style={styles.crisisTextBold}>112</Text> कॉल करात
+          </Text>
           <View style={styles.crisisCallButton}>
-            <Text style={styles.crisisCallButtonText}>112 कॉल करात</Text>
+            <Text style={styles.crisisCallButtonText}>कॉल</Text>
           </View>
         </TouchableOpacity>
 
-        {/* ── Breathing exercise ───────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>श्वासोच्छ्वासाचो व्यायाम</Text>
-        <View style={styles.breathingCard}>
-          <Text style={styles.breathingHint}>
-            चार सेकंद स्वास भितर घेयात, चार सेकंद धरून दवरात, चार सेकंद भायर सोडात, चार सेकंद धरून दवरात. तुमकां बरें दिसपासर परतून करात.
-          </Text>
-          <View style={styles.breathingCircleWrap}>
-            <Animated.View
-              style={[
-                styles.breathingCircle,
-                { transform: [{ scale: breathing.scale }] },
-              ]}
-            >
-              <Text style={styles.breathingPhaseText}>
-                {currentPhase ? currentPhase.label : "तयार"}
-              </Text>
-            </Animated.View>
-          </View>
+        {/* ── Tab toggle ─────────────────────────────────────────────── */}
+        <View style={styles.tabToggle}>
           <TouchableOpacity
-            style={[styles.breathingButton, breathing.isActive && styles.breathingButtonActive]}
+            style={[styles.tabButton, tab === "calm" && styles.tabButtonActive]}
+            onPress={() => setTab("calm")}
             activeOpacity={0.85}
-            onPress={breathing.isActive ? breathing.stop : breathing.start}
           >
-            <Text style={styles.breathingButtonText}>
-              {breathing.isActive ? "बंद करात" : "व्यायाम सुरू करात"}
+            <Text style={[styles.tabButtonText, tab === "calm" && styles.tabButtonTextActive]}>
+              व्यायाम
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, tab === "help" && styles.tabButtonActive]}
+            onPress={() => setTab("help")}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.tabButtonText, tab === "help" && styles.tabButtonTextActive]}>
+              हेल्पलायन
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Grounding exercise ───────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>5-4-3-2-1 जाणीव व्यायाम</Text>
-        <Text style={styles.sectionHint}>
-          जेन्ना तुमचे विचार वेगान धांवतात तेन्ना उपेगी. एका फाटल्यान एक, हळू हळू, प्रत्येक ज्ञानेंद्रियाचो वापर करात.
-        </Text>
-        <View style={styles.groundingCard}>
-          {GROUNDING_STEPS.map((step, index) => (
-            <View key={step.sense}>
-              <View style={styles.groundingRow}>
-                <View style={styles.groundingCountBubble}>
-                  <Text style={styles.groundingCountText}>{step.count}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.groundingSense}>{step.sense}</Text>
-                  <Text style={styles.groundingDetail}>{step.detail}</Text>
-                </View>
+        {tab === "calm" ? (
+          <>
+            {/* ── Breathing exercise ───────────────────────────────── */}
+            <View style={styles.breathingCard}>
+              <Text style={styles.breathingLabel}>बॉक्स ब्रीदिंग</Text>
+              <View style={styles.breathingCircleWrap}>
+                <Animated.View
+                  style={[
+                    styles.breathingCircle,
+                    { transform: [{ scale: breathing.scale }] },
+                  ]}
+                >
+                  <Text style={styles.breathingPhaseText}>
+                    {currentPhase ? currentPhase.label : "तयार"}
+                  </Text>
+                </Animated.View>
               </View>
-              {index < GROUNDING_STEPS.length - 1 && <View style={styles.divider} />}
-            </View>
-          ))}
-        </View>
-
-        {/* ── Other calming techniques ─────────────────────────────── */}
-        <Text style={styles.sectionTitle}>आनीक मजत करपी गजाली</Text>
-        <View style={{ gap: 10, marginBottom: theme.spacing.lg }}>
-          {TECHNIQUES.map((t) => (
-            <View key={t.title} style={styles.techniqueCard}>
-              <Text style={styles.techniqueTitle}>{t.title}</Text>
-              <Text style={styles.techniqueDetail}>{t.detail}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* ── Helpline directory ───────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>कोणाशीं उलोवात</Text>
-        <Text style={styles.sectionHint}>
-          फुकट आनी गुप्त. कॉल करपाक कार्डार क्लीक करात.
-        </Text>
-        <View style={{ gap: 10, marginBottom: theme.spacing.lg }}>
-          {HELPLINES.map((h) => (
-            <TouchableOpacity
-              key={h.name}
-              style={[styles.helplineCard, h.danger && styles.helplineCardDanger]}
-              activeOpacity={0.88}
-              onPress={() => callNumber(h.tel)}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.helplineName}>{h.name}</Text>
-                <Text style={styles.helplineDetail}>{h.detail}</Text>
-                <Text style={styles.helplineHours}>{h.hours}</Text>
-              </View>
-              <View style={[styles.helplineNumberPill, h.danger && styles.helplineNumberPillDanger]}>
-                <Text style={[styles.helplineNumberText, h.danger && styles.helplineNumberTextDanger]}>
-                  {h.number}
+              <TouchableOpacity
+                style={[styles.breathingButton, breathing.isActive && styles.breathingButtonActive]}
+                activeOpacity={0.85}
+                onPress={breathing.isActive ? breathing.stop : breathing.start}
+              >
+                <Text
+                  style={[
+                    styles.breathingButtonText,
+                    breathing.isActive && styles.breathingButtonTextActive,
+                  ]}
+                >
+                  {breathing.isActive ? "बंद करात" : "सुरू करात"}
                 </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+              </TouchableOpacity>
+              {!breathing.isActive && (
+                <Text style={styles.breathingHint}>
+                  4 सेकंद भितर, 4 धरात, 4 भायर, 4 धरात — परतून परतून
+                </Text>
+              )}
+            </View>
+
+            {/* ── Grounding, collapsed by default ─────────────────── */}
+            <AccordionSection
+              title="5-4-3-2-1 जाणीव व्यायाम"
+              subtitle="विचार वेगान धांवतात तेन्ना उपेगी"
+            >
+              {GROUNDING_STEPS.map((step, index) => (
+                <View key={step.sense} style={styles.groundingRow}>
+                  <View style={styles.groundingCountBubble}>
+                    <Text style={styles.groundingCountText}>{step.count}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.groundingSense}>{step.sense}</Text>
+                    <Text style={styles.groundingDetail}>{step.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </AccordionSection>
+
+            {/* ── Techniques, collapsed rows ───────────────────────── */}
+            <AccordionSection
+              title="आनीक मजत करपी गजाली"
+              subtitle="टॅप करून वाचात"
+            >
+              {TECHNIQUES.map((t, index) => (
+                <ExpandableRow
+                  key={t.title}
+                  title={t.title}
+                  detail={t.detail}
+                  isLast={index === TECHNIQUES.length - 1}
+                />
+              ))}
+            </AccordionSection>
+          </>
+        ) : (
+          <>
+            {/* ── Helpline directory ────────────────────────────────── */}
+            <Text style={styles.sectionHint}>
+              फुकट आनी गुप्त. कार्डार टॅप करून सरळ कॉल करात.
+            </Text>
+            <View style={{ gap: 12, marginBottom: theme.spacing.lg }}>
+              {HELPLINES.filter((h) => !h.danger).map((h) => (
+                <TouchableOpacity
+                  key={h.name}
+                  style={styles.helplineCard}
+                  activeOpacity={0.88}
+                  onPress={() => callNumber(h.tel)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.helplineName}>{h.name}</Text>
+                    <Text style={styles.helplineDetail}>{h.detail}</Text>
+                    <Text style={styles.helplineHours}>{h.hours}</Text>
+                  </View>
+                  <View style={styles.helplineNumberPill}>
+                    <Text style={styles.helplineNumberText}>{h.number}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
 
         <Text style={styles.disclaimer}>
-          ही साधनां व्यावसायीक उपचारांचो पर्याय न्हय. जर तुमकां वैयक्तीक तकलीफ जाता, तर वयल्या हेल्पलायनींपैकी एका वा परवानो आशिल्ल्या तज्ञाक संपर्क करचो.
+          ही साधनां व्यावसायीक उपचारांचो पर्याय न्हय. वैयक्तीक तकलीफ जाल्यार, हेल्पलायनीक वा तज्ञाक संपर्क करचो.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -304,7 +376,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.lg,
-    paddingBottom: 36,
+    paddingBottom: 40,
   },
   kicker: {
     fontFamily: theme.fonts.bodySemiBold,
@@ -316,98 +388,105 @@ const styles = StyleSheet.create({
   heading: {
     fontFamily: theme.fonts.display,
     color: theme.colors.text,
-    fontSize: 25,
-    lineHeight: 34,
-    marginBottom: 8,
-  },
-  subheading: {
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 24,
-    marginBottom: theme.spacing.lg,
+    fontSize: 26,
+    lineHeight: 32,
+    marginBottom: theme.spacing.md,
   },
 
+  // ── Crisis banner: compact, single line ──────────────────────────
   crisisBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    justifyContent: "space-between",
     backgroundColor: "rgba(248,113,113,0.08)",
-    borderRadius: theme.radius.xl,
-    padding: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: "rgba(248,113,113,0.35)",
+    borderRadius: theme.radius.full,
+    paddingLeft: 16,
+    paddingRight: 6,
+    paddingVertical: 6,
     marginBottom: theme.spacing.lg,
-  },
-  crisisTitle: {
-    fontFamily: theme.fonts.bodySemiBold,
-    color: theme.colors.danger,
-    fontSize: 15,
-    marginBottom: 4,
   },
   crisisText: {
     fontFamily: theme.fonts.body,
-    color: theme.colors.textSecondary,
+    color: theme.colors.text,
     fontSize: 13,
-    lineHeight: 20,
+    flex: 1,
+  },
+  crisisTextBold: {
+    fontFamily: theme.fonts.bodySemiBold,
+    color: theme.colors.danger,
   },
   crisisCallButton: {
     backgroundColor: theme.colors.danger,
     borderRadius: theme.radius.full,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 9,
   },
   crisisCallButtonText: {
     color: "#fff",
     fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 13,
+    fontSize: 12,
   },
 
-  sectionTitle: {
+  // ── Tab toggle ────────────────────────────────────────────────────
+  tabToggle: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 4,
+    marginBottom: theme.spacing.xl,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: theme.radius.full,
+    alignItems: "center",
+  },
+  tabButtonActive: { backgroundColor: theme.colors.primary },
+  tabButtonText: {
     fontFamily: theme.fonts.bodySemiBold,
     color: theme.colors.textSecondary,
-    fontSize: 13,
-    letterSpacing: 0.4,
-    marginBottom: 8,
-    marginTop: 4,
+    fontSize: 14,
   },
+  tabButtonTextActive: { color: "#fff" },
+
   sectionHint: {
     fontFamily: theme.fonts.body,
     color: theme.colors.textMuted,
     fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 12,
+    lineHeight: 19,
+    marginBottom: 14,
   },
 
+  // ── Breathing card: no border, soft tint, generous room ──────────
   breathingCard: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.primaryGlow,
     borderRadius: theme.radius.xl,
-    padding: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    paddingVertical: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.lg,
     alignItems: "center",
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.xl,
   },
-  breathingHint: {
-    fontFamily: theme.fonts.body,
-    color: theme.colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 21,
-    textAlign: "center",
+  breathingLabel: {
+    fontFamily: theme.fonts.bodySemiBold,
+    color: theme.colors.primary,
+    fontSize: 12,
+    letterSpacing: 0.6,
     marginBottom: theme.spacing.lg,
   },
   breathingCircleWrap: {
-    width: 180,
-    height: 180,
+    width: 190,
+    height: 190,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: theme.spacing.lg,
   },
   breathingCircle: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: theme.colors.primaryGlow,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: theme.colors.background,
     borderWidth: 2,
     borderColor: theme.colors.primary,
     alignItems: "center",
@@ -423,40 +502,78 @@ const styles = StyleSheet.create({
   breathingButton: {
     backgroundColor: theme.colors.primary,
     borderRadius: theme.radius.full,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
   },
   breathingButtonActive: {
-    backgroundColor: theme.colors.surfaceElevated,
+    backgroundColor: theme.colors.background,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: theme.colors.primary,
   },
   breathingButtonText: {
     color: "#fff",
     fontFamily: theme.fonts.bodySemiBold,
     fontSize: 14,
   },
+  breathingButtonTextActive: { color: theme.colors.primary },
+  breathingHint: {
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    marginTop: theme.spacing.md,
+  },
 
-  groundingCard: {
+  // ── Accordion (grounding + techniques) ───────────────────────────
+  accordionCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
     overflow: "hidden",
   },
+  accordionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  accordionTitle: {
+    fontFamily: theme.fonts.bodySemiBold,
+    color: theme.colors.text,
+    fontSize: 15,
+    marginBottom: 2,
+  },
+  accordionSubtitle: {
+    fontFamily: theme.fonts.body,
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
+  accordionIcon: {
+    color: theme.colors.primary,
+    fontFamily: theme.fonts.bodySemiBold,
+    fontSize: 20,
+    width: 24,
+    textAlign: "center",
+  },
+  accordionBody: {
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+
   groundingRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    gap: 12,
+    paddingVertical: 10,
   },
   groundingCountBubble: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: theme.colors.primaryGlow,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: theme.colors.surfaceElevated,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -464,42 +581,54 @@ const styles = StyleSheet.create({
   groundingCountText: {
     color: theme.colors.primary,
     fontFamily: theme.fonts.bodySemiBold,
-    fontSize: 14,
+    fontSize: 13,
   },
   groundingSense: {
     fontFamily: theme.fonts.bodySemiBold,
     color: theme.colors.text,
-    fontSize: 14,
-    marginBottom: 3,
+    fontSize: 13.5,
+    marginBottom: 2,
   },
   groundingDetail: {
     fontFamily: theme.fonts.body,
     color: theme.colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 12.5,
+    lineHeight: 18,
   },
-  divider: { height: 1, backgroundColor: theme.colors.border, marginLeft: 46 },
 
-  techniqueCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  // ── Expandable rows (techniques) ─────────────────────────────────
+  expandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    gap: 10,
   },
-  techniqueTitle: {
+  expandRowTitle: {
+    flex: 1,
     fontFamily: theme.fonts.bodySemiBold,
     color: theme.colors.text,
-    fontSize: 14,
-    marginBottom: 4,
+    fontSize: 13.5,
   },
-  techniqueDetail: {
+  expandRowIcon: {
+    color: theme.colors.primary,
+    fontFamily: theme.fonts.bodySemiBold,
+    fontSize: 18,
+    width: 20,
+    textAlign: "center",
+  },
+  expandRowDetail: {
     fontFamily: theme.fonts.body,
     color: theme.colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 21,
+    fontSize: 12.5,
+    lineHeight: 19,
+    paddingBottom: 12,
+    paddingRight: 26,
   },
+  expandRowBadge: {},
+  expandRowBadgeText: {},
+  divider: { height: 1, backgroundColor: theme.colors.border },
 
+  // ── Helpline cards, more spacious in their own tab ───────────────
   helplineCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -509,9 +638,6 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-  },
-  helplineCardDanger: {
-    borderColor: "rgba(248,113,113,0.35)",
   },
   helplineName: {
     fontFamily: theme.fonts.bodySemiBold,
@@ -523,7 +649,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     color: theme.colors.textSecondary,
     fontSize: 12,
-    lineHeight: 19,
+    lineHeight: 18,
     marginBottom: 4,
   },
   helplineHours: {
@@ -540,17 +666,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  helplineNumberPillDanger: {
-    backgroundColor: "rgba(248,113,113,0.12)",
-    borderColor: "rgba(248,113,113,0.4)",
-  },
   helplineNumberText: {
     fontFamily: theme.fonts.bodySemiBold,
     color: theme.colors.text,
     fontSize: 12,
-  },
-  helplineNumberTextDanger: {
-    color: theme.colors.danger,
   },
 
   disclaimer: {
@@ -558,8 +677,8 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 12,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 19,
     paddingHorizontal: 8,
-    marginTop: 4,
+    marginTop: theme.spacing.md,
   },
 });
